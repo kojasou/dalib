@@ -129,8 +129,23 @@ public static class ImageProcessor
 
         //don't quantize/dither if the image already has less than maximum number of colors
         if (colorCount <= options.MaxColors)
+        {
+            //all colors must be fully opaque or fully transparent
+            existingPixels = existingPixels.Select(
+                                               pixel =>
+                                               {
+                                                   //normally the quantizer would set all fully transparent pixels to black
+                                                   //but since we didn't quantize the image, we have to do it manually
+                                                   if (pixel.Alpha == 0)
+                                                       return SKColors.Black;
+
+                                                   //all other colors are set to be fully opaque
+                                                   return pixel.WithAlpha(byte.MaxValue);
+                                               })
+                                           .ToArray();
+
             existingPixels.CopyTo(pixelBuffer);
-        else if (options.Ditherer is not null)
+        } else if (options.Ditherer is not null)
         {
             using var dSession = options.Ditherer!.Initialize(source, qSession);
 
@@ -163,17 +178,7 @@ public static class ImageProcessor
 
         if (colorCount <= options.MaxColors)
             palette = new Palette(
-                existingPixels.Select(
-                                  c =>
-                                  {
-                                      //normally the quantizer would set all fully transparent pixels to black
-                                      //but since we didn't quantize the image, we have to do it manually
-                                      if (c.Alpha == 0)
-                                          return SKColors.Black;
-
-                                      return c;
-                                  })
-                              .Distinct()
+                existingPixels.Distinct()
                               .OrderBy(c => c.GetLuminance()));
         else
             palette = qSession.Palette!.ToDALibPalette();
@@ -207,7 +212,7 @@ public static class ImageProcessor
         using var quantizedMosaic = Quantize(options, mosaic);
         using var bitmap = SKBitmap.FromImage(quantizedMosaic.Entity);
 
-        var quantizedImages = new List<SKImage>();
+        var quantizedImages = new SKImageCollection([]);
         var x = 0;
 
         for (var i = 0; i < images.Length; i++)
@@ -232,7 +237,7 @@ public static class ImageProcessor
 
         return new Palettized<SKImageCollection>
         {
-            Entity = new SKImageCollection(quantizedImages),
+            Entity = quantizedImages,
             Palette = quantizedMosaic.Palette
         };
     }
